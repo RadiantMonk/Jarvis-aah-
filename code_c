@@ -1,0 +1,422 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <math.h>
+#include <regex.h>
+
+// Define M_PI if not defined
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+// Function: speak
+// Prints the given text with "JARVIS:" prefix and uses espeak to voice the text.
+void speak(const char *text) {
+    printf("JARVIS: %s\n", text);
+    char command[512];
+    // Using espeak for text-to-speech; redirect errors to /dev/null.
+    snprintf(command, sizeof(command), "espeak \"%s\" 2>/dev/null", text);
+    system(command);
+}
+
+// Function: listen
+// Simulates speech recognition by prompting the user to press 'R' to start recording,
+// then reads the user's spoken text and prompts to press 'S' to stop recording.
+// Returns a dynamically allocated string containing the user input in lowercase.
+char *listen() {
+    char buffer[1024] = "";
+    char input[10] = "";
+    
+    printf("\nPress 'R' to start recording...\n");
+    // Wait for user to press 'r' (followed by Enter)
+    while (1) {
+        if(fgets(input, sizeof(input), stdin) != NULL) {
+            if (tolower(input[0]) == 'r') {
+                break;
+            }
+        }
+    }
+    
+    printf("Recording... Speak now.\n");
+    // Simulate recording: get the spoken text from the user
+    if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+        strcpy(buffer, "");
+    }
+    
+    printf("Press 'S' to stop recording...\n");
+    while (1) {
+        if(fgets(input, sizeof(input), stdin) != NULL) {
+            if (tolower(input[0]) == 's') {
+                break;
+            }
+        }
+    }
+    
+    printf("Processing audio...\n");
+    
+    // Allocate memory for the command string and copy buffer to it
+    char *command = malloc(strlen(buffer) + 1);
+    if (command) {
+        strcpy(command, buffer);
+        // Remove trailing newline if it exists
+        size_t len = strlen(command);
+        if (len > 0 && command[len - 1] == '\n') {
+            command[len - 1] = '\0';
+        }
+        // Convert to lowercase
+        for (int i = 0; command[i]; i++) {
+            command[i] = tolower(command[i]);
+        }
+    }
+    return command;
+}
+
+// Helper function: extract a substring from a given string based on offset and length.
+// The returned substring is allocated dynamically.
+char *substr(const char *src, size_t start, size_t length) {
+    char *dest = (char *)malloc(length + 1);
+    if (dest) {
+        strncpy(dest, src + start, length);
+        dest[length] = '\0';
+    }
+    return dest;
+}
+
+// Function: calculate_math
+// Processes the provided expression string, performs mathematical operations using various regex patterns,
+// and returns a dynamically allocated string with the result. If an error occurs, returns the error message.
+char *calculate_math(const char *expression_input) {
+    char *output = (char *)malloc(256);
+    if (!output) {
+        return strdup("Error: Memory allocation failed.");
+    }
+    
+    // Make a working copy of the input expression in lowercase
+    char expression[1024];
+    strncpy(expression, expression_input, 1023);
+    expression[1023] = '\0';
+    for (int i = 0; expression[i]; i++) {
+        expression[i] = tolower(expression[i]);
+    }
+    // Replace "is equal to" and "equals" with "=" in the expression manually.
+    // For simplicity, we will use strstr and simple string replacement.
+    char tempExpr[1024];
+    strcpy(tempExpr, expression);
+    // Note: This simple replacement assumes that the phrases occur only once.
+    char *pos = strstr(tempExpr, "is equal to");
+    if (pos) {
+        // Replace with "="
+        size_t index = pos - tempExpr;
+        tempExpr[index] = '=';
+        tempExpr[index+1] = '\0';
+        strcat(tempExpr, pos + strlen("is equal to"));
+        strcpy(expression, tempExpr);
+    }
+    pos = strstr(expression, "equals");
+    if (pos) {
+        size_t index = pos - expression;
+        expression[index] = '=';
+        expression[index+1] = '\0';
+        strcat(expression, pos + strlen("equals"));
+    }
+    
+    regex_t reg;
+    regmatch_t matches[4];
+    int ret;
+    
+    // 1. Trigonometric functions pattern:
+    // Pattern: (sine|cosine|tangent|sin|cos|tan)\s*(?:of)?\s*(-?\d+)
+    ret = regcomp(&reg, "(sine|cosine|tangent|sin|cos|tan)[[:space:]]*(?:of)?[[:space:]]*(-?\\d+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 3, matches, 0) == 0) {
+        char *func = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        char *angleStr = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+        int angle_deg = atoi(angleStr);
+        double angle_rad = angle_deg * (M_PI / 180.0);
+        double value = 0.0;
+        if (strcmp(func, "sine") == 0 || strcmp(func, "sin") == 0) {
+            value = sin(angle_rad);
+        } else if (strcmp(func, "cosine") == 0 || strcmp(func, "cos") == 0) {
+            value = cos(angle_rad);
+        } else if (strcmp(func, "tangent") == 0 || strcmp(func, "tan") == 0) {
+            value = tan(angle_rad);
+        }
+        snprintf(output, 256, "The answer is %.5f", value);
+        free(func);
+        free(angleStr);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 2. Square root pattern: "square root of (\d+)"
+    ret = regcomp(&reg, "square root of ([0-9]+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 2, matches, 0) == 0) {
+        char *numberStr = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        int number = atoi(numberStr);
+        double result = sqrt((double)number);
+        snprintf(output, 256, "The answer is %.5f", result);
+        free(numberStr);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 3. Logarithm pattern: "log\s*(?:of\s*)?(\d+)(?:\s*base\s*(\d+))?"
+    ret = regcomp(&reg, "log[[:space:]]*(?:of[[:space:]]*)?([0-9]+)(?:[[:space:]]*base[[:space:]]*([0-9]+))?", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 3, matches, 0) == 0) {
+        char *numStr = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        int num = atoi(numStr);
+        int base = 10; // default
+        if (matches[2].rm_so != -1) {
+            char *baseStr = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+            base = atoi(baseStr);
+            free(baseStr);
+        }
+        double result = (double)log(num) / log(base);
+        snprintf(output, 256, "The answer is %.5f", result);
+        free(numStr);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+
+    // 4. Equation solving pattern: "solve (.+)="
+    ret = regcomp(&reg, "solve (.+)=", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 2, matches, 0) == 0) {
+        // Extract the left-hand side of the equation from the regex match.
+        char *equation_left = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        // Find the last '=' in the full expression to extract right-hand side.
+        char *eqSign = strrchr(expression, '=');
+        if (eqSign != NULL) {
+            char equation_right[512] = "";
+            strncpy(equation_right, eqSign + 1, sizeof(equation_right) - 1);
+            // Trim leading spaces from right-hand side
+            char *p = equation_right;
+            while (*p && isspace(*p)) p++;
+            // Prepare a Python command that uses sympy to solve the equation.
+            char pythonCmd[1024];
+            // The command creates a symbolic variable x, solves the equation, and prints the first solution.
+            snprintf(pythonCmd, sizeof(pythonCmd),
+                     "python3 -c \"import sympy as sp; x=sp.Symbol('x'); "
+                     "sol=sp.solve(sp.sympify('%s')-sp.sympify('%s'), x); "
+                     "print('x = ' + str(sol[0]) if sol else 'No solution found.')\"",
+                     equation_left, p);
+            FILE *fp = popen(pythonCmd, "r");
+            if (fp != NULL) {
+                char solBuffer[256] = "";
+                if (fgets(solBuffer, sizeof(solBuffer), fp) != NULL) {
+                    // Remove trailing newline
+                    size_t l = strlen(solBuffer);
+                    if(l > 0 && solBuffer[l-1] == '\n') solBuffer[l-1] = '\0';
+                    snprintf(output, 256, "%s", solBuffer);
+                } else {
+                    snprintf(output, 256, "No solution found.");
+                }
+                pclose(fp);
+            } else {
+                snprintf(output, 256, "Error: Could not invoke Python solver.");
+            }
+        } else {
+            snprintf(output, 256, "No solution found.");
+        }
+        free(equation_left);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 5. Power pattern: "(\d+)\s*(?:to the power of|raised to)\s*(\d+)"
+    ret = regcomp(&reg, "([0-9]+)[[:space:]]*(?:to the power of|raised to)[[:space:]]*([0-9]+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 3, matches, 0) == 0) {
+        char *baseStr = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        char *expStr = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+        int baseVal = atoi(baseStr);
+        int expVal = atoi(expStr);
+        long long result = 1;
+        for (int i = 0; i < expVal; i++) {
+            result *= baseVal;
+        }
+        snprintf(output, 256, "The answer is %lld", result);
+        free(baseStr);
+        free(expStr);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 6. Factorial pattern: "factorial of (\d+)"
+    ret = regcomp(&reg, "factorial of ([0-9]+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 2, matches, 0) == 0) {
+        char *numStr = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        int num = atoi(numStr);
+        long long fact = 1;
+        for (int i = 1; i <= num; i++) {
+            fact *= i;
+        }
+        snprintf(output, 256, "The answer is %lld", fact);
+        free(numStr);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 7. Modulus pattern: "(\d+)\s*(?:mod|modulus)\s*(\d+)"
+    ret = regcomp(&reg, "([0-9]+)[[:space:]]*(?:mod|modulus)[[:space:]]*([0-9]+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 3, matches, 0) == 0) {
+        char *num1Str = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        char *num2Str = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+        int num1 = atoi(num1Str);
+        int num2 = atoi(num2Str);
+        int mod = num1 % num2;
+        snprintf(output, 256, "The answer is %d", mod);
+        free(num1Str);
+        free(num2Str);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 8. Sum pattern: "sum of (\d+) and (\d+)"
+    ret = regcomp(&reg, "sum of ([0-9]+) and ([0-9]+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 3, matches, 0) == 0) {
+        char *num1Str = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        char *num2Str = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+        int num1 = atoi(num1Str);
+        int num2 = atoi(num2Str);
+        snprintf(output, 256, "The answer is %d", num1 + num2);
+        free(num1Str);
+        free(num2Str);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 9. Difference pattern: "difference between (\d+) and (\d+)"
+    ret = regcomp(&reg, "difference between ([0-9]+) and ([0-9]+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 3, matches, 0) == 0) {
+        char *num1Str = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        char *num2Str = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+        int num1 = atoi(num1Str);
+        int num2 = atoi(num2Str);
+        int diff = abs(num1 - num2);
+        snprintf(output, 256, "The answer is %d", diff);
+        free(num1Str);
+        free(num2Str);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 10. Product pattern: "product of (\d+) and (\d+)"
+    ret = regcomp(&reg, "product of ([0-9]+) and ([0-9]+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 3, matches, 0) == 0) {
+        char *num1Str = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        char *num2Str = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+        int num1 = atoi(num1Str);
+        int num2 = atoi(num2Str);
+        snprintf(output, 256, "The answer is %d", num1 * num2);
+        free(num1Str);
+        free(num2Str);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 11. Quotient pattern: "quotient of (\d+) and (\d+)"
+    ret = regcomp(&reg, "quotient of ([0-9]+) and ([0-9]+)", REG_ICASE | REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 3, matches, 0) == 0) {
+        char *num1Str = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        char *num2Str = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+        int num1 = atoi(num1Str);
+        int num2 = atoi(num2Str);
+        if (num2 == 0) {
+            snprintf(output, 256, "Division by zero is undefined.");
+        } else {
+            double quotient = (double)num1 / num2;
+            snprintf(output, 256, "The answer is %.5f", quotient);
+        }
+        free(num1Str);
+        free(num2Str);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // 12. Generic arithmetic pattern: "(\d+)\s*([\+\-\*/])\s*(\d+)"
+    ret = regcomp(&reg, "([0-9]+)[[:space:]]*([\\+\\-\\*/])[[:space:]]*([0-9]+)", REG_EXTENDED);
+    if (ret == 0 && regexec(&reg, expression, 4, matches, 0) == 0) {
+        char *num1Str = substr(expression, matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+        char *opStr   = substr(expression, matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
+        char *num2Str = substr(expression, matches[3].rm_so, matches[3].rm_eo - matches[3].rm_so);
+        int num1 = atoi(num1Str);
+        int num2 = atoi(num2Str);
+        if (strcmp(opStr, "+") == 0) {
+            snprintf(output, 256, "The answer is %d", num1 + num2);
+        } else if (strcmp(opStr, "-") == 0) {
+            snprintf(output, 256, "The answer is %d", num1 - num2);
+        } else if (strcmp(opStr, "*") == 0) {
+            snprintf(output, 256, "The answer is %d", num1 * num2);
+        } else if (strcmp(opStr, "/") == 0) {
+            if (num2 == 0) {
+                snprintf(output, 256, "Division by zero is undefined.");
+            } else {
+                double divResult = (double)num1 / num2;
+                snprintf(output, 256, "The answer is %.5f", divResult);
+            }
+        }
+        free(num1Str);
+        free(opStr);
+        free(num2Str);
+        regfree(&reg);
+        return output;
+    }
+    regfree(&reg);
+    
+    // If none of the patterns match:
+    snprintf(output, 256, "Sorry, I couldn't solve that.");
+    return output;
+}
+
+// Function: main
+// The main loop welcomes the user, then continuously listens for commands.
+// If a command triggers a math calculation, it processes it; otherwise, it responds accordingly.
+// The session ends when the user says "stop this session".
+int main() {
+    speak("Hello! I am JARVIS. Press 'R' to start recording and 'S' to stop.");
+    
+    while (1) {
+        char *command = listen();
+        if (!command) {
+            speak("Error: Could not capture command.");
+            continue;
+        }
+        
+        // Check if the command contains "stop this session"
+        if (strstr(command, "stop this session") != NULL) {
+            speak("Ending the session. Goodbye!");
+            free(command);
+            break;
+        }
+        
+        // Check if command contains any of the math trigger keywords.
+        if (strstr(command, "what is") != NULL ||
+            strstr(command, "calculate") != NULL ||
+            strstr(command, "solve") != NULL ||
+            strstr(command, "sum of") != NULL ||
+            strstr(command, "difference between") != NULL ||
+            strstr(command, "product of") != NULL ||
+            strstr(command, "quotient of") != NULL) {
+            
+            char *result = calculate_math(command);
+            speak(result);
+            free(result);
+        } else {
+            speak("I'm not sure how to respond to that.");
+        }
+        
+        free(command);
+    }
+    
+    return 0;
+}
