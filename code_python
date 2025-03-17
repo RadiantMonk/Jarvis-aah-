@@ -1,0 +1,147 @@
+import speech_recognition as sr
+import pyttsx3
+import re
+import numpy as np
+import sympy as sp
+import operator
+import math
+import keyboard
+
+engine = pyttsx3.init()
+engine.setProperty('rate', 150)
+
+
+def speak(text):
+    print(f"JARVIS: {text}")
+    engine.say(text)
+    engine.runAndWait()
+
+
+def listen():
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("\nPress 'R' to start recording...")
+        while not keyboard.is_pressed('r'):
+            pass
+        print("Recording... Speak now.")
+
+        recognizer.adjust_for_ambient_noise(source)
+        audio = recognizer.listen(source)
+
+        print("Press 'S' to stop recording...")
+        while not keyboard.is_pressed('s'):
+            pass
+        print("Processing audio...")
+
+    try:
+        command = recognizer.recognize_google(audio).lower()
+        print(f"You said: {command}")
+        return command
+    except sr.UnknownValueError:
+        print("You said: (Could not understand)")
+        return "I couldn't understand that."
+    except sr.RequestError:
+        return "Error: Speech recognition service unavailable."
+
+
+def calculate_math(expression):
+    try:
+        expression = expression.lower()
+        expression = expression.replace("is equal to", "=").replace("equals", "=")
+
+        trig_match = re.search(r"(sine|cosine|tangent|sin|cos|tan)\s*(?:of)?\s*(-?\d+)", expression)
+        if trig_match:
+            func, angle = trig_match.groups()
+            angle = np.radians(int(angle))
+            trig_functions = {
+                "sine": np.sin, "cosine": np.cos, "tangent": np.tan,
+                "sin": np.sin, "cos": np.cos, "tan": np.tan
+            }
+            return f"The answer is {trig_functions[func](angle):.5f}"
+
+        sqrt_match = re.search(r"square root of (\d+)", expression)
+        if sqrt_match:
+            number = int(sqrt_match.group(1))
+            return f"The answer is {math.sqrt(number):.5f}"
+
+        log_match = re.search(r"log\s*(?:of\s*)?(\d+)(?:\s*base\s*(\d+))?", expression)
+        if log_match:
+            num = int(log_match.group(1))
+            base = int(log_match.group(2)) if log_match.group(2) else 10
+            return f"The answer is {math.log(num, base):.5f}"
+
+        eq_match = re.search(r"solve (.+)=", expression)
+        if eq_match:
+            equation = eq_match.group(1).strip()
+            x = sp.Symbol("x")
+            solution = sp.solve(sp.sympify(equation) - sp.sympify(expression.split('=')[-1]), x)
+            return f"x = {solution[0]}" if solution else "No solution found."
+
+        power_match = re.search(r"(\d+)\s*(?:to the power of|raised to)\s*(\d+)", expression)
+        if power_match:
+            base, exponent = map(int, power_match.groups())
+            return f"The answer is {base ** exponent}"
+
+        fact_match = re.search(r"factorial of (\d+)", expression)
+        if fact_match:
+            num = int(fact_match.group(1))
+            return f"The answer is {math.factorial(num)}"
+
+        mod_match = re.search(r"(\d+)\s*(?:mod|modulus)\s*(\d+)", expression)
+        if mod_match:
+            num1, num2 = map(int, mod_match.groups())
+            return f"The answer is {num1 % num2}"
+
+        sum_match = re.search(r"sum of (\d+) and (\d+)", expression)
+        if sum_match:
+            num1, num2 = map(int, sum_match.groups())
+            return f"The answer is {num1 + num2}"
+
+        diff_match = re.search(r"difference between (\d+) and (\d+)", expression)
+        if diff_match:
+            num1, num2 = map(int, diff_match.groups())
+            return f"The answer is {abs(num1 - num2)}"
+
+        product_match = re.search(r"product of (\d+) and (\d+)", expression)
+        if product_match:
+            num1, num2 = map(int, product_match.groups())
+            return f"The answer is {num1 * num2}"
+
+        quotient_match = re.search(r"quotient of (\d+) and (\d+)", expression)
+        if quotient_match:
+            num1, num2 = map(int, quotient_match.groups())
+            return f"The answer is {num1 / num2:.5f}" if num2 != 0 else "Division by zero is undefined."
+
+        pattern = r"(\d+)\s*([\+\-\*/])\s*(\d+)"
+        match = re.search(pattern, expression)
+        if match:
+            num1, op, num2 = match.groups()
+            num1, num2 = int(num1), int(num2)
+            operators = {"+": operator.add, "-": operator.sub, "*": operator.mul, "/": operator.truediv}
+            return f"The answer is {operators[op](num1, num2)}"
+
+        return "Sorry, I couldn't solve that."
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def main():
+    speak("Hello! I am JARVIS. Press 'R' to start recording and 'S' to stop.")
+
+    while True:
+        command = listen()
+
+        if "stop this session" in command:
+            speak("Ending the session. Goodbye!")
+            break
+
+        if "what is" in command or "calculate" in command or "solve" in command or "sum of" in command or "difference between" in command or "product of" in command or "quotient of" in command:
+            result = calculate_math(command)
+            speak(result)
+        else:
+            speak("I'm not sure how to respond to that.")
+
+
+if __name__ == "__main__":
+    main()
